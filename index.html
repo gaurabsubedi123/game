@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cocktail Catch Game</title>
+  <style>
+    /* Basic page styling to center the game */
+    body {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #222;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    #info {
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+    /* Container so the how-to text can sit in a corner of the canvas */
+    #gameArea {
+      position: relative;
+    }
+    canvas {
+      border: 2px solid #555;
+      background: #111;
+      display: block;
+    }
+    /* Short how-to, top-right corner, doesn't block gameplay */
+    #howToPlay {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      max-width: 180px;
+      font-size: 13px;
+      line-height: 1.3;
+      color: #ddd;
+      background: rgba(0, 0, 0, 0.45);
+      padding: 6px 8px;
+      border-radius: 4px;
+      pointer-events: none;
+    }
+    #message {
+      margin-top: 10px;
+      font-size: 20px;
+      height: 30px;
+    }
+    /* Full-screen overlay for win / game over */
+    .overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    .overlay h1 {
+      font-size: 64px;
+      margin: 0 0 20px 0;
+    }
+    .overlay p {
+      font-size: 28px;
+      margin: 0 0 30px 0;
+    }
+    .overlay button {
+      padding: 14px 28px;
+      font-size: 20px;
+      background: #4FC3F7;
+      color: #111;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .overlay button:hover {
+      background: #81D4FA;
+    }
+    /* Title screen shown before the game starts */
+    #titleScreen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 20px;
+    }
+    #titleScreen img {
+      max-width: 400px;
+      width: 100%;
+      height: auto;
+      margin-bottom: 20px;
+      border-radius: 8px;
+    }
+    #titleScreen .howTo {
+      font-size: 18px;
+      line-height: 1.4;
+      max-width: 360px;
+      margin-bottom: 30px;
+      color: #ddd;
+    }
+    #startBtn {
+      padding: 16px 40px;
+      font-size: 28px;
+      background: #4FC3F7;
+      color: #111;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    #startBtn:hover {
+      background: #81D4FA;
+    }
+    /* Hide game elements until Start is clicked */
+    #gameContainer {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- Title screen shown first -->
+  <div id="titleScreen">
+    <img src="bg.jpeg" alt="Cocktail Catch">
+    <div class="howTo">Use arrow keys to move the tray.<br>Catch 10 glasses to win. Miss 3 and it's game over.</div>
+    <button id="startBtn">Start</button>
+  </div>
+
+  <!-- Game elements (hidden until Start is clicked) -->
+  <div id="gameContainer">
+    <!-- Score and lives always visible -->
+    <div id="info">Score: <span id="score">0</span> | Lives: <span id="lives">3</span></div>
+    <div id="gameArea">
+      <canvas id="game" width="400" height="600"></canvas>
+      <div id="howToPlay">Use arrow keys to move the tray.<br>Catch 10 glasses to win. Miss 3 and it's game over.</div>
+    </div>
+    <div id="message">Catch 10 drinks to win! Use arrow keys.</div>
+  </div>
+
+  <!-- Win screen overlay -->
+  <div id="winOverlay" class="overlay">
+    <h1>You Won!</h1>
+    <p>Final Score: <span id="winScoreDisplay">10</span></p>
+    <button id="playAgainWin">Play Again</button>
+  </div>
+
+  <!-- Game over screen overlay -->
+  <div id="gameOverOverlay" class="overlay">
+    <h1>Game Over</h1>
+    <p>Final Score: <span id="gameOverScoreDisplay">0</span></p>
+    <button id="playAgainLose">Play Again</button>
+  </div>
+
+  <script>
+    // Get canvas and context for drawing
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    // Game state variables
+    let score = 0;
+    let lives = 3;
+    const winScore = 10;
+    let gameOver = false;
+    let gameWon = false;
+
+    // Load the tray and glass images (same folder as this HTML file)
+    const trayImg = new Image();
+    trayImg.src = 'tray.jpeg';
+    const glassImg = new Image();
+    glassImg.src = 'glass.jpeg';
+
+    // Tray (player) properties
+    const tray = {
+      x: canvas.width / 2 - 60, // start centered
+      y: canvas.height - 50,
+      width: 120,
+      height: 40,
+      speed: 8, // pixels per frame while key is held
+    };
+
+    // Array to hold falling glasses
+    let glasses = [];
+
+    // Keyboard state for smooth movement
+    const keys = {
+      left: false,
+      right: false
+    };
+
+    // Listen for arrow key presses and releases
+    // preventDefault stops the page from scrolling when arrows are pressed
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') {
+        keys.left = true;
+        e.preventDefault();
+      }
+      if (e.key === 'ArrowRight') {
+        keys.right = true;
+        e.preventDefault();
+      }
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowLeft') keys.left = false;
+      if (e.key === 'ArrowRight') keys.right = false;
+    });
+
+    // Create a new falling glass at a random horizontal position
+    function spawnGlass() {
+      glasses.push({
+        x: Math.random() * (canvas.width - 40), // random x, leave margin
+        y: 0,
+        width: 40,
+        height: 60,
+        speed: 0.4 + Math.random() * 0.6, // much slower fall for easier catching
+      });
+    }
+
+    // Update game logic every frame
+    function update() {
+      if (gameOver || gameWon) return;
+
+      // Move tray left/right continuously while the key is held
+      if (keys.left) tray.x -= tray.speed;
+      if (keys.right) tray.x += tray.speed;
+
+      // Clamp so the tray can never leave the edges of the canvas
+      tray.x = Math.max(0, Math.min(canvas.width - tray.width, tray.x));
+
+      // Move all glasses down
+      for (let i = glasses.length - 1; i >= 0; i--) {
+        const g = glasses[i];
+        g.y += g.speed;
+
+        // Check if caught by tray (simple rectangle overlap)
+        if (
+          g.y + g.height >= tray.y &&
+          g.y < tray.y + tray.height &&
+          g.x + g.width > tray.x &&
+          g.x < tray.x + tray.width
+        ) {
+          // Caught! Increase score and remove glass
+          score++;
+          document.getElementById('score').textContent = score;
+          glasses.splice(i, 1);
+
+          // Check win condition
+          if (score >= winScore) {
+            gameWon = true;
+            showWinScreen();
+          }
+          continue;
+        }
+
+        // Missed - fell off the bottom
+        if (g.y > canvas.height) {
+          lives--;
+          document.getElementById('lives').textContent = lives;
+          glasses.splice(i, 1);
+
+          // Check lose condition
+          if (lives <= 0) {
+            gameOver = true;
+            showGameOverScreen();
+          }
+        }
+      }
+
+      // Spawn fewer glasses (roughly one every 2–3 seconds)
+      if (Math.random() < 0.008) {
+        spawnGlass();
+      }
+    }
+
+    // Draw everything on the canvas
+    function draw() {
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw tray image
+      if (trayImg.complete) {
+        ctx.drawImage(trayImg, tray.x, tray.y, tray.width, tray.height);
+      }
+
+      // Draw all glass images
+      glasses.forEach(g => {
+        if (glassImg.complete) {
+          ctx.drawImage(glassImg, g.x, g.y, g.width, g.height);
+        }
+      });
+    }
+
+    // Show the big centered win screen and stop the game
+    function showWinScreen() {
+      document.getElementById('winScoreDisplay').textContent = score;
+      document.getElementById('winOverlay').style.display = 'flex';
+      document.getElementById('message').textContent = '';
+    }
+
+    // Show the big centered game over screen and stop the game
+    function showGameOverScreen() {
+      document.getElementById('gameOverScoreDisplay').textContent = score;
+      document.getElementById('gameOverOverlay').style.display = 'flex';
+      document.getElementById('message').textContent = '';
+    }
+
+    // Reset everything and start a fresh game
+    function restartGame() {
+      score = 0;
+      lives = 3;
+      gameOver = false;
+      gameWon = false;
+      glasses = [];
+      tray.x = canvas.width / 2 - 60;
+      keys.left = false;
+      keys.right = false;
+
+      // Update the on-screen displays
+      document.getElementById('score').textContent = score;
+      document.getElementById('lives').textContent = lives;
+      document.getElementById('message').textContent = 'Catch 10 drinks to win! Use arrow keys.';
+
+      // Hide both overlays
+      document.getElementById('winOverlay').style.display = 'none';
+      document.getElementById('gameOverOverlay').style.display = 'none';
+    }
+
+    // Wire up both Play Again buttons
+    document.getElementById('playAgainWin').addEventListener('click', restartGame);
+    document.getElementById('playAgainLose').addEventListener('click', restartGame);
+
+    // Main game loop using requestAnimationFrame for smooth animation
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Start button: hide title screen, show the game, and begin
+    document.getElementById('startBtn').addEventListener('click', () => {
+      document.getElementById('titleScreen').style.display = 'none';
+      document.getElementById('gameContainer').style.display = 'flex';
+      document.getElementById('gameContainer').style.flexDirection = 'column';
+      document.getElementById('gameContainer').style.alignItems = 'center';
+      gameLoop();
+    });
+  </script>
+</body>
+</html>
